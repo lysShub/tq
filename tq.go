@@ -85,7 +85,6 @@ func (t *TQ) Add(f Ts) error {
 // // Delete 删除一个还未执行的任务
 // // 任务列表中T.P与f相同的任务
 // func (t *TQ) Delete(f interface{}) {
-
 // }
 
 // TaskLoad 当前任务量
