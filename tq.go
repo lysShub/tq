@@ -11,14 +11,14 @@ type TQ struct {
 	// 使用slice来存储任务，在中间插入任务会导致slice产生副本；尽量少用
 	// 使用UTC时间，及不要有time.Now().Local()的写法；除非你知道将发生什么
 
-	// 将按照预定时间返回消息
+	// 将按照预定时间返回消息；请及时读取，否则会阻塞以致影响后续任务
 	MQ chan interface{}
 
 	/* 内部 */
 	container []Ts           // 容器，按照时间顺序存储任务
 	wg        sync.WaitGroup // 流程控制阻塞
-	mt        sync.RWMutex   // container的写锁
-	rest      sync.WaitGroup // 休息阻塞 休息即container中没有数据
+	cl        sync.RWMutex   // container的写锁
+	rest      sync.WaitGroup // 休息阻塞；休息即container中没有数据
 
 }
 
@@ -50,10 +50,10 @@ func (t *TQ) Run() {
 						time.Sleep(t.container[0].T.Sub(time.Now()))
 
 						/* 执行任务 */
-						t.mt.RLock()
+						t.cl.RLock()
 						tmp = t.container[0]
 						t.container = t.container[1:] // 出1
-						t.mt.RUnlock()
+						t.cl.RUnlock()
 
 						t.MQ <- tmp.P // 执行操作
 
@@ -68,7 +68,6 @@ func (t *TQ) Run() {
 			inw.Wait()
 		}
 	}()
-
 }
 
 // Add 增加一个任务
@@ -83,15 +82,30 @@ func (t *TQ) Add(f Ts) error {
 	return nil
 }
 
+// // Delete 删除一个还未执行的任务
+// // 任务列表中T.P与f相同的任务
+// func (t *TQ) Delete(f interface{}) {
+
+// }
+
+// TaskLoad 当前任务量
+func (t *TQ) TaskLoad() int {
+	return len(t.container)
+}
+
+/*
+* 私有
+ */
+
 // 插入任务 返回是否是需要重置延时
 func (t *TQ) insert(i Ts) bool {
 	var l int = len(t.container)
 	var flag bool = false
 
 	if l == 0 { // 取消休息(取消休息不可能需要重置)
-		t.mt.RLock()
+		t.cl.RLock()
 		t.container = append(t.container, i)
-		t.mt.RUnlock()
+		t.cl.RUnlock()
 
 		// time.Sleep(time.Millisecond * 5)
 		// fmt.Println("解除休息阻塞")
@@ -100,14 +114,14 @@ func (t *TQ) insert(i Ts) bool {
 	} else { // 插入任务
 
 		if i.T.After(t.container[l-1].T) { // 最后追加
-			t.mt.RLock()
+			t.cl.RLock()
 			t.container = append(t.container, i)
-			t.mt.RUnlock()
+			t.cl.RUnlock()
 
 		} else if i.T.Before(t.container[0].T) { // 开头插入
-			t.mt.RLock()
+			t.cl.RLock()
 			t.container = append([]Ts{i}, t.container...)
-			t.mt.RUnlock()
+			t.cl.RUnlock()
 			flag = true //需要重置
 
 		} else { // 其他位置插入
@@ -133,10 +147,10 @@ func (t *TQ) insert(i Ts) bool {
 			}()
 
 			// 插入
-			t.mt.RLock()
+			t.cl.RLock()
 			// t.container = append(append(t.container[:k+1], i), t.container[k+1:]...)
 			t.container = sliceInsert(i, k, t.container)
-			t.mt.RUnlock()
+			t.cl.RUnlock()
 		}
 	}
 	return flag
