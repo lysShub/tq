@@ -2,15 +2,10 @@ package tq
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
-
-var GuardWg sync.WaitGroup
-
-func init() {
-	GuardWg.Add(1)
-}
 
 type TQ struct {
 	// 时间任务队列
@@ -23,12 +18,9 @@ type TQ struct {
 	/* 内部 */
 	container []Ts           // 容器，按照时间顺序存储任务
 	wg        sync.WaitGroup // 流程控制阻塞
-	// rwg       sync.WaitGroup // wg的'ACK'，确保在wg的计数器不为负数
-	cl   sync.RWMutex   // container的锁
-	rest sync.WaitGroup // 休息阻塞；休息即container中没有数据
-	// wa        sync.Mutex
-	first bool // 懒得初始化，false 表示第一次
-	A     time.Time
+	cl        sync.RWMutex   // container的写锁
+	rest      sync.WaitGroup // 休息阻塞；休息即container中没有数据
+
 }
 
 //
@@ -39,53 +31,43 @@ type Ts struct {
 
 // Run 运行任务。是阻塞函数、请使用协程运行
 func (t *TQ) Run() {
-	t.container = make([]Ts, 0, 64)
+
 	t.MQ = make(chan interface{}, 64)
+	t.container = make([]Ts, 0, 64)
 
 	go func() { // 流程控制
 
 		var inw sync.WaitGroup
-		var tmp Ts
-		// t.rest.Add(1)
-		// t.rwg.Add(1)
+		// var tmp Ts
+		
+		t.rest.Add(1)
 
-		// 这种设计失败，并不能是旧协程退出
 		for {
-			inw.Add(1)
 			t.wg.Add(1)
-			// t.rwg.Done()
-
+inw.Add(1)
 			go func() {
 				go func() {
 					for {
-
-						if len(t.container) == 0 { // 休息阻塞
-							t.rest.Add(1)
-							if !t.first {
-								GuardWg.Done()
-								t.first = true
-							}
-						}
-
-						// a := time.Now()
 						t.rest.Wait() // 休息阻塞
 
+						// go fmt.Println("等待", t.container[0].T.Sub(time.Now()))
 						time.Sleep(t.container[0].T.Sub(time.Now()))
 
-						tmp = t.container[0]
-
+						go fmt.Println("此时长度", len(t.container))
 						/* 执行任务 */
-						t.cl.Lock()
-
+						tmp := t.container[0]
+						t.cl.RLock()
 						t.container = t.container[1:] // 出1
-						t.cl.Unlock()
+						t.cl.RUnlock()
 
 						t.MQ <- tmp.P // 执行操作
 
+						if len(t.container) == 0 { // 开始休息
+							t.rest.Add(1)
+						}
 					}
 				}()
 				t.wg.Wait()
-
 				inw.Done()
 			}()
 			inw.Wait()
@@ -96,36 +78,26 @@ func (t *TQ) Run() {
 // Add 增加一个任务
 func (t *TQ) Add(f Ts) error {
 
-	t.cl.Lock()
-
 	if f.T.Before(time.Now()) {
-		t.cl.Unlock()
+
 		return errors.New("invalid time")
 	}
 
-	r := t.insert(f)
-
-	t.cl.Unlock()
-	if r == 2 { // 在最前面插入，须重置延时
+	if t.insert(f) { // 在最前面插入，须重置延时
 		t.wg.Done()
-
-	} else if r == 1 {
-		if !t.first {
-			GuardWg.Wait()
-		}
-		t.rest.Done()
-		if t.first {
-
-		}
 	}
 
 	return nil
 }
 
+// // Delete 删除一个还未执行的任务
+// // 任务列表中T.P与f相同的任务
+// func (t *TQ) Delete(f interface{}) {
+// }
+
 // TaskLoad 当前任务量
 func (t *TQ) TaskLoad() int {
-	r := len(t.container)
-	return r
+	return len(t.container)
 }
 
 /*
@@ -133,24 +105,33 @@ func (t *TQ) TaskLoad() int {
  */
 
 // 插入任务 返回是否是需要重置延时
-func (t *TQ) insert(i Ts) int {
-
+func (t *TQ) insert(i Ts) bool {
 	var l int = len(t.container)
-	var flag int = 0
+	var flag bool = false
 
 	if l == 0 { // 取消休息(取消休息不可能需要重置)
+		t.cl.RLock()
 		t.container = append(t.container, i)
+		t.cl.RUnlock()
+		go fmt.Println("l为0")
+		// time.Sleep(time.Millisecond * 5)
+		// fmt.Println("解除休息阻塞")
 
-		flag = 1
+		t.rest.Done() // 解除休息阻塞
 
 	} else { // 插入任务
 
-		if i.T.After(t.read(l - 1).T) { // 最后追加
+		if i.T.After(t.container[l-1].T) { // 最后追加
+			t.cl.RLock()
 			t.container = append(t.container, i)
+			t.cl.RUnlock()
 
-		} else if i.T.Before(t.read(0).T) { // 开头插入
+		} else if i.T.Before(t.container[0].T) { // 开头插入
+			go fmt.Println("开头插入")
+			t.cl.RLock()
 			t.container = append([]Ts{i}, t.container...)
-			flag = 2 //需要重置
+			t.cl.RUnlock()
+			flag = true //需要重置
 
 		} else { // 其他位置插入
 			k := func() int { // 二分法 查找
@@ -175,14 +156,13 @@ func (t *TQ) insert(i Ts) int {
 			}()
 
 			// 插入
+			t.cl.RLock()
+			// t.container = append(append(t.container[:k+1], i), t.container[k+1:]...)
 			t.container = sliceInsert(i, k, t.container)
+			t.cl.RUnlock()
 		}
 	}
 	return flag
-}
-
-func (t *TQ) read(l int) Ts {
-	return t.container[l]
 }
 
 // 在list的下标为的k元素之后插入i；会产生副本

@@ -12,17 +12,19 @@ func main() {
 
 	var q = new(tq.TQ)
 	go q.Run()
+	// time.Sleep(time.Microsecond * 10)
 
 	// 读取
-	a := time.Now()
+	q.A = time.Now()
 	var r interface{}
 	go func() {
 		for {
 			r = (<-(q.MQ)) //读取任务
+
 			v, ok := r.(string)
 			if ok {
 				go func() {
-					t := time.Now().Sub(a)
+					t := time.Now().Sub(q.A)
 					fmt.Println(v, t)
 				}()
 
@@ -34,32 +36,18 @@ func main() {
 
 	fmt.Println("写入")
 
-	// 增加任务
-	q.Add(tq.Ts{
-		T: time.Now().Add(time.Second),
-		P: "延时1s",
-	})
-
-	q.Add(tq.Ts{
-		T: time.Now().Add(time.Second * 2),
-		P: "延时2s",
-	})
-
-	q.Add(tq.Ts{
-		T: time.Now().Add(time.Second * 3),
-		P: "延时3s",
-	})
-
-	q.Add(tq.Ts{
-		T: time.Now().Add(time.Millisecond * 2500),
-		P: "延时2.5s",
-	})
-	for i := 10; i < 100; i++ {
+	for i := 1000; i < 1100; i = i + 10 {
 		q.Add(tq.Ts{
-			T: time.Now().Add(time.Second * time.Duration(i)),
-			P: "延时" + strconv.Itoa(i) + "s",
+			T: time.Now().Add(time.Millisecond * time.Duration(i)),
+			P: "延时" + strconv.Itoa(i) + "ms",
 		})
 	}
 
-	time.Sleep(time.Minute * 5)
+	q.Add(tq.Ts{
+		T: time.Now().Add(time.Second * time.Duration(2)),
+		P: "延时 2s",
+	})
+
+	time.Sleep(time.Hour)
+	fmt.Println("完成")
 }
