@@ -11,9 +11,7 @@ import (
 func main() {
 
 	var q = new(tq.TQ)
-	q.InitEnd.Add(1)
 	go q.Run()
-	q.InitEnd.Wait() // 确保初始化完成
 
 	// 读取
 	star := time.Now()

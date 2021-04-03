@@ -8,14 +8,12 @@ import (
 )
 
 type TQ struct {
-	// 时间任务队列
-	// 使用管道来存储任务
 	// 使用UTC时间，及不要有time.Now().Local()的写法；除非你知道将发生什么
 
 	// 将按照预定时间返回消息；请及时读取，否则会阻塞以致影响后续任务
 	MQ chan interface{}
 
-	//
+	// 确保初始化完成
 	InitEnd sync.WaitGroup
 
 	/* 内部 */
@@ -35,6 +33,7 @@ type Ts struct {
 
 // Run 运行任务，阻塞函数，请使用协程运行。
 func (t *TQ) Run() {
+	t.InitEnd.Add(1)
 
 	t.imr = make(chan Ts, 64)
 	t.cn = make(chan int64, 16)
@@ -52,7 +51,10 @@ func (t *TQ) Run() {
 		}
 	}()
 
-	t.InitEnd.Done()
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		t.InitEnd.Done() //初始化完成
+	}()
 	// 分发任务
 	for {
 		var r Ts
@@ -97,6 +99,8 @@ func (t *TQ) Run() {
 
 // Add 增加任务
 func (t *TQ) Add(r Ts) {
+	t.InitEnd.Wait()
+
 	t.imr <- r
 }
 
