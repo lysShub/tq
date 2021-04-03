@@ -11,11 +11,12 @@ import (
 func main() {
 
 	var q = new(tq.TQ)
+	q.InitEnd.Add(1)
 	go q.Run()
-	// time.Sleep(time.Microsecond * 10)
+	q.InitEnd.Wait() // 确保初始化完成
 
 	// 读取
-	q.A = time.Now()
+	star := time.Now()
 	var r interface{}
 	go func() {
 		for {
@@ -24,8 +25,8 @@ func main() {
 			v, ok := r.(string)
 			if ok {
 				go func() {
-					t := time.Now().Sub(q.A)
-					fmt.Println(v, t)
+					t := time.Now().Sub(star)
+					fmt.Println(v, "   实际延时:", t)
 				}()
 
 			} else {
@@ -34,20 +35,13 @@ func main() {
 		}
 	}()
 
-	fmt.Println("写入")
-
-	for i := 1000; i < 1100; i = i + 10 {
-		q.Add(tq.Ts{
-			T: time.Now().Add(time.Millisecond * time.Duration(i)),
-			P: "延时" + strconv.Itoa(i) + "ms",
+	// 写入任务
+	for i := 1; i < 100; i++ {
+		go q.Add(tq.Ts{ // 并发安全
+			T: time.Now().Add(time.Second * time.Duration(i)),
+			P: "延时" + strconv.Itoa(i) + "s",
 		})
 	}
 
-	q.Add(tq.Ts{
-		T: time.Now().Add(time.Second * time.Duration(2)),
-		P: "延时 2s",
-	})
-
 	time.Sleep(time.Hour)
-	fmt.Println("完成")
 }

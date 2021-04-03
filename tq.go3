@@ -1,0 +1,130 @@
+package tq
+
+import (
+	"sync"
+	"time"
+)
+
+type TQ struct {
+	// 时间任务队列
+	// 使用管道来存储任务，不是在最后追加任务会产生新的协程去处理任务：
+	//
+	// 使用UTC时间，及不要有time.Now().Local()的写法；除非你知道将发生什么
+
+	// 将按照预定时间返回消息；请及时读取，否则会阻塞以致影响后续任务
+	MQ chan interface{}
+
+	/* 内部 */
+	chans [](chan Ts)    // 储存所有任务的协程对应的管道
+	ends  []time.Time    // 容器，记录所有协程中最后一次任务的时间
+	wg    sync.WaitGroup // 流程控制阻塞
+	imr   chan Ts        // 内部通信函数
+	ml    int            // 默认任务管道容量
+	cn    chan int       // 新建了管道, 传递序号
+	wc    sync.Mutex     // 读写锁
+	wc1   sync.Mutex     // 读写锁
+	A     time.Time
+}
+
+// Ts 表示一个任务
+type Ts struct {
+	T time.Time
+	P interface{} // 任务参数，到时通过MQ返回
+}
+
+type Ti struct {
+	T time.Duration
+	P interface{}
+}
+
+// Run 运行任务，阻塞函数，请使用协程运行。
+func (t *TQ) Run() {
+	t.imr = make(chan Ts, 64)
+	t.cn = make(chan int, 16)
+	t.MQ = make(chan interface{}, 64)
+	t.chans = make([](chan Ts), 0, 16)
+	t.ends = make([]time.Time, 0, 16)
+	t.ml = 64
+	// t.wg.Add(1)
+
+	// 执行任务
+	go func() {
+
+		for { // 新建了管道
+			i := <-t.cn
+			go t.exec(i)
+
+		}
+	}()
+
+	// 分发任务
+	for {
+		var r Ts
+
+		r = <-t.imr
+		if len(t.ends) == 0 { // 第一次
+			var sc chan Ts = make(chan Ts, t.ml)
+			t.chans = append(t.chans, sc)
+			t.ends = append(t.ends, r.T)
+
+			t.chans[0] <- r
+			t.cn <- 0
+		} else {
+
+			var flag bool = false
+			for i, v := range t.ends {
+				if r.T.After(v) && len(t.chans[i]) < t.ml { //不需要新建管道
+					t.chans[i] <- r
+					t.ends[i] = r.T
+					flag = true
+				}
+			}
+			// 需要新建管道
+			if !flag {
+				var sc chan Ts = make(chan Ts, t.ml)
+				t.chans = append(t.chans, sc)
+				t.ends = append(t.ends, r.T)
+
+				t.wc1.Lock()
+				t.chans[len(t.chans)-1] <- r
+				t.cn <- len(t.chans) - 1
+				t.wc1.Unlock()
+			}
+		}
+
+	}
+
+}
+
+// Add 增加任务
+func (t *TQ) Add(r Ti) {
+
+	t.imr <- Ts{
+		T: time.Now().Add(r.T),
+		P: r.P,
+	}
+}
+
+// exec 执行任务
+func (t *TQ) exec(index int) {
+	var ts Ts
+
+	// var c chan Ts = t.chans[index]
+	for {
+
+		// 退出有点复杂，不退了
+		// 执行完任务后应该退出
+		// if len(t.chans[index]) == 0 {
+		// 	t.wc.Lock()
+		// 	t.ends = append(t.ends[:index], t.ends[index+1:]...)    // 删除ends中记录
+		// 	close(t.chans[index])                                   // 关闭管道
+		// 	t.chans = append(t.chans[:index], t.chans[index+1:]...) // 删除chans中记录
+		// 	t.wc.Unlock()
+		// 	return
+		// }
+
+		ts = <-t.chans[index]
+		time.Sleep(ts.T.Sub(time.Now())) //延时等待
+		t.MQ <- ts.P
+	}
+}
