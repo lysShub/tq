@@ -9,37 +9,35 @@ import (
 )
 
 func main() {
+	Q := new(tq.TQ)
+	go Q.Run()
+	tq.InitEnd.Wait() // 必须，确保初始化完成
 
-	var q = new(tq.TQ)
-	go q.Run()
+	var st time.Time
 
-	// 读取
-	star := time.Now()
 	var r interface{}
+	st = time.Now()
 	go func() {
-		for {
-			r = (<-(q.MQ)) //读取任务
 
+		for {
+			r = <-(Q.MQ)
 			v, ok := r.(string)
 			if ok {
-				go func() {
-					t := time.Now().Sub(star)
-					fmt.Println(v, "   实际延时:", t)
-				}()
-
+				fmt.Println(v, " 实际延时:", time.Now().Sub(st))
 			} else {
-				fmt.Println("不是字符串")
+				fmt.Println("类型错误")
 			}
 		}
 	}()
 
-	// 写入任务
-	for i := 1; i < 100; i++ {
-		go q.Add(tq.Ts{ // 并发安全
+	for i := 0; i < 20; i++ {
+		go Q.Add(tq.Ts{ // 并发安全
 			T: time.Now().Add(time.Second * time.Duration(i)),
-			P: "延时" + strconv.Itoa(i) + "s",
+			P: "设定延时:" + strconv.Itoa(i) + "s",
 		})
+
 	}
 
-	time.Sleep(time.Hour)
+	time.Sleep(time.Second * 25)
+
 }
