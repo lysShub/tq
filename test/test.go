@@ -11,7 +11,6 @@ import (
 func main() {
 	Q := new(tq.TQ)
 	go Q.Run()
-	tq.InitEnd.Wait() // 必须，确保初始化完成
 
 	var st time.Time
 
@@ -35,7 +34,6 @@ func main() {
 			T: time.Now().Add(time.Second * time.Duration(i)),
 			P: "设定延时:" + strconv.Itoa(i) + "s",
 		})
-
 	}
 
 	time.Sleep(time.Second * 25)

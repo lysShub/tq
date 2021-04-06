@@ -7,13 +7,6 @@ import (
 	"time"
 )
 
-// 确保初始化完成
-var InitEnd sync.WaitGroup
-
-func init() {
-	InitEnd.Add(1)
-}
-
 type TQ struct {
 	// 使用UTC时间，及不要有time.Now().Local()的写法；除非你知道将发生什么
 
@@ -21,12 +14,13 @@ type TQ struct {
 	MQ chan interface{}
 
 	/* 内部 */
-	chans map[int64](chan Ts) // 储存任务
-	ends  map[int64]time.Time // 记录对应管道的最后一次任务的时间
-	imr   chan Ts             //
-	dcl   int                 // 默认任务管道容量
-	cid   chan int64          // 传递id，表示新建了管道
-	wc    sync.Mutex          // 读写锁
+	chans   map[int64](chan Ts) // 储存任务
+	ends    map[int64]time.Time // 记录对应管道的最后一次任务的时间
+	imr     chan Ts             //
+	dcl     int                 // 默认任务管道容量
+	cid     chan int64          // 传递id，表示新建了管道
+	wc      sync.Mutex          // 读写锁
+	initEnd sync.WaitGroup      // 确保初始化完成
 }
 
 // Ts 表示一个任务
@@ -35,8 +29,9 @@ type Ts struct {
 	P interface{}
 }
 
-// Run 运行任务，阻塞函数，请使用协程运行。
+// Run 运行任务，阻塞函数，请使用协程运行。启动时间10ms
 func (t *TQ) Run() {
+	t.initEnd.Add(1)
 
 	t.imr = make(chan Ts, 64)
 	t.cid = make(chan int64, 16)
@@ -55,16 +50,17 @@ func (t *TQ) Run() {
 			case <-time.After(time.Minute):
 				// nothing
 			}
-			i := <-t.cid
-			go t.exec(i)
 		}
 	}()
 
-	InitEnd.Done() // 初始化完成
-
 	// 分发任务
+	var first bool = true
 	for {
 		var r Ts
+		if first {
+			first = false
+			t.initEnd.Done()
+		}
 
 		select {
 		case r = <-t.imr:
@@ -112,6 +108,7 @@ func (t *TQ) Run() {
 
 // Add 增加任务
 func (t *TQ) Add(r Ts) {
+	t.initEnd.Wait()
 	t.imr <- r
 }
 
