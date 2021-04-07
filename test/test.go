@@ -10,14 +10,13 @@ import (
 
 func main() {
 	Q := new(tq.TQ)
-	go Q.Run()
+	Q.Run() // 运行
 
 	var st time.Time
 
-	var r interface{}
 	st = time.Now()
 	go func() {
-
+		var r interface{}
 		for {
 			r = <-(Q.MQ)
 			v, ok := r.(string)
@@ -34,8 +33,8 @@ func main() {
 			T: time.Now().Add(time.Second * time.Duration(i)),
 			P: "设定延时:" + strconv.Itoa(i) + "s",
 		})
+
 	}
 
 	time.Sleep(time.Second * 25)
-
 }
