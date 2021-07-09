@@ -2,7 +2,7 @@
 
 ​			如你所见，此任务队列使用`channel`实现，巧妙设计，仅使用Golang 官方包`sync`和`time`实现了所有功能；优点不言自明。本队列<font style="color:red">误差不会累积、且并发安全</font>。
 
-## **快速开始**
+## 快速开始
 
 ​		[参考](https://github.com/lysShub/tq/blob/master/test/test.go)
 
