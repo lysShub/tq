@@ -34,6 +34,11 @@ func main() {
 			P: "设定延时:" + strconv.Itoa(i) + "s",
 		})
 	}
+	Q.Add(tq.Ts{
+		T: time.Now().UTC().Add(time.Second * 21),
+		P: "设定延时: 21s",
+	})
 
 	time.Sleep(time.Second * 25)
+
 }
