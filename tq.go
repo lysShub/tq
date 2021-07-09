@@ -44,13 +44,6 @@ func (t *TQ) Run() {
 			// 新建了管道
 			id := <-t.idsChan
 			go t.exec(t.taskChans[id], id) // 执行每个管道中的任务
-
-			// select {
-			// case id := <-t.idsChan:
-			// 	go t.exec(t.taskChans[id], id) // 执行每个管道中的任务
-			// case <-time.After(time.Minute):
-			// 	// nothing
-			// }
 		}
 	}()
 
