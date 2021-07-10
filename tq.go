@@ -90,9 +90,9 @@ func (t *TQ) exec(c chan Ts, id int64) {
 		if id != 0 && len(c) == 0 {
 			// 释放
 			t.lock.Lock()
-			delete(t.endTimes, id)  // 删除endTimes中记录
-			close(c)                // 关闭管道
-			delete(t.taskChans, id) // 删除chans中记录
+			delete(t.endTimes, id)
+			close(c)
+			delete(t.taskChans, id)
 			t.lock.Unlock()
 			return
 		}
