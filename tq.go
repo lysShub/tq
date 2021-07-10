@@ -87,17 +87,15 @@ func (t *TQ) Add(r Ts) error {
 func (t *TQ) exec(c chan Ts, id int64) {
 	var ts Ts
 	for {
-
-		t.lock.Lock()
 		if id != 0 && len(c) == 0 {
 			// 释放
+			t.lock.Lock()
 			delete(t.endTimes, id)  // 删除endTimes中记录
 			close(c)                // 关闭管道
 			delete(t.taskChans, id) // 删除chans中记录
 			t.lock.Unlock()
 			return
 		}
-		t.lock.Unlock()
 
 		ts = <-c
 		time.Sleep(time.Until(ts.T)) //延时
