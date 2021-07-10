@@ -15,7 +15,7 @@ func main() {
 	var st = time.Now()
 	go func() {
 		var r interface{}
-		for {
+		for { // 每次循环不能有明显执行时间，避免通知管道MQ阻塞
 			r = <-(Q.MQ)
 			if v, ok := r.(string); ok {
 				go fmt.Println(v, " 实际延时:", time.Since(st))

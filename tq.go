@@ -49,7 +49,7 @@ func (t *TQ) Run() {
 			var flag bool = false
 			for id, v := range t.endTimes {
 
-				if r.T.After(v) && len(t.taskChans[id]) <= 65536 { //追加
+				if r.T.After(v) && len(t.taskChans[id]) <= 1048576 { //追加
 					t.taskChans[id] <- r
 					t.endTimes[id] = r.T
 					flag = true
