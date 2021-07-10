@@ -18,7 +18,7 @@ func main() {
 		for {
 			r = <-(Q.MQ)
 			if v, ok := r.(string); ok {
-				go fmt.Println(v, " 实际延时:", time.Now().Sub(st))
+				go fmt.Println(v, " 实际延时:", time.Since(st))
 			}
 		}
 	}()
