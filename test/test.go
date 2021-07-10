@@ -30,10 +30,10 @@ func main() {
 		})
 	}
 	Q.Add(tq.Ts{
-		T: time.Now().UTC().Add(time.Second * 20),
-		P: "设定延时: 20s",
+		T: time.Now().UTC().Add(time.Second * 10),
+		P: "设定延时:10s",
 	})
 
-	time.Sleep(time.Second * 21)
+	time.Sleep(time.Second * 20)
 
 }
