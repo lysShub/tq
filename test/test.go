@@ -9,13 +9,12 @@ import (
 )
 
 func main() {
-	Q := new(tq.TQ)
-	Q.Run() // 运行
+	Q := tq.NewTQ() // 运行
 
 	var st = time.Now()
 	go func() {
 		var r interface{}
-		for { // 每次循环不能有明显执行时间，避免通知管道MQ阻塞
+		for { // 每次循环不能阻塞太长，避免通知管道MQ阻塞
 			r = <-(Q.MQ)
 			if v, ok := r.(string); ok {
 				go fmt.Println(v, " 实际延时:", time.Since(st))

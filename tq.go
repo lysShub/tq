@@ -24,8 +24,14 @@ type Ts struct {
 	P interface{} // 执行时返回的数据
 }
 
+func NewTQ() *TQ {
+	var t = new(TQ)
+	t.run()
+	return t
+}
+
 // Run 启动
-func (t *TQ) Run() {
+func (t *TQ) run() {
 	t.addChan = make(chan Ts, 128)
 	t.MQ = make(chan interface{}, 128)
 	t.idsChan = make(chan int64, 64)
