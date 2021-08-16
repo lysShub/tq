@@ -1,6 +1,6 @@
 # tq(time queue)：时间任务队列
 
-​			如你所见，此任务队列使用`channel`实现，巧妙设计，仅使用Golang 官方包`sync`和`time`实现了所有功能；优点不言自明。本队列**误差不会累积、且并发安全**。
+​			如你所见，此任务队列使用`channel`实现，仅使用Golang 官方包`sync`和`time`实现了所有功能；优点不言自明。本队列**误差不会累积、且并发安全**。
 
 ###### 快速开始
 
@@ -8,10 +8,10 @@
 
 ###### 工作原理
 
-​		几乎在同一时间依次`Add` `time.Duration`为`1s 2s 3s 8s 12s 5s 7s 4s `的任务，那么[taskChans](https://github.com/lysShub/tq/blob/master/tq.go#L19)中将有3个任务管道用来存储任务：
+​		几乎在同一时间依次`Add` `time.Duration`为`1s 2s 3s 8s 12s 5s 7s 4s 13s`的任务，那么[taskChans](https://github.com/lysShub/tq/blob/master/tq.go#L14)中将有3个任务管道用来存储任务：
 
 ```shell
-任务管道1 id: 0      任务: 1s 2s 3s 8s 12s
+任务管道1 id: 0      任务: 1s 2s 3s 8s 12s 13s
 ```
 
 ```shell
@@ -45,5 +45,5 @@ for _, v := range a {
 fmt.Println("平均误差：", t/20)
 ```
 
-​		系统上的误差可以可以通过以上代码大致了解，在Windows系统上误差存在波动，平均误差甚至可以达到10ms级别（似乎和CPU频率有关，低压U误差更大）；而在Linux上则较为理想。
+​		系统上的误差可以通过以上代码大致了解，在Windows系统上误差较大，平均误差甚至可以达到10ms级别（似乎和CPU频率有关，低压U误差更大）。
 
