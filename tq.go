@@ -17,7 +17,6 @@ type TQ struct {
 	endTimes  map[int64]time.Time // 记录对应任务管道的最后任务的执行时间
 	idsChan   chan int64          // 传递id，表示新建了管道
 	lock      sync.Mutex          // 互斥锁, 确保
-	chanId    int64               // 管道id
 }
 
 // Ts 表示一个任务
@@ -52,12 +51,13 @@ func (t *TQ) run() {
 	go func() {
 		var r Ts
 		var flag bool
+		var chanId int64 // 管道id
 		for !t.Close {
 			r = <-t.addChan
 
 			flag = false
 			for id, v := range t.endTimes {
-				if r.T.After(v) && len(t.taskChans[id]) <= 1048576 { //追加
+				if r.T.After(v) { //&& len(t.taskChans[id]) <= 1048576 追加
 					t.taskChans[id] <- r
 					t.endTimes[id] = r.T
 					flag = true
@@ -67,19 +67,19 @@ func (t *TQ) run() {
 
 			// 需要新建管道
 			if !flag {
-				var sc chan Ts = make(chan Ts, 64*2)
+				var tc chan Ts = make(chan Ts, 16)
 
-				t.chanId++
-				if len(t.endTimes) == 0 {
-					t.chanId = 0
-				}
+				// 新建
 				t.lock.Lock()
-				t.taskChans[t.chanId] = sc // add
+				t.taskChans[chanId] = tc // add
 				t.lock.Unlock()
+				t.endTimes[chanId] = r.T
 
-				t.endTimes[t.chanId] = r.T
-				t.taskChans[t.chanId] <- r
-				t.idsChan <- t.chanId
+				// 写入
+				t.taskChans[chanId] <- r
+				t.idsChan <- chanId
+
+				chanId++
 			}
 		}
 
@@ -109,7 +109,6 @@ func (t *TQ) exec(c chan Ts, id int64) {
 			// 释放
 			t.lock.Lock()
 			delete(t.endTimes, id)
-			close(c)
 			delete(t.taskChans, id)
 			t.lock.Unlock()
 			return
