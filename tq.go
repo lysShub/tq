@@ -9,13 +9,15 @@ type TQ struct {
 
 	// 达到任务执行时间时返回对应的Ts.P; 请及时读取, 否则会阻塞以致影响后续任务
 	MQ chan interface{}
+	// 赋值True将销毁队列实例; MQ不在有返回, 处理任务的协程将退出, Add将会painc
+	Close bool
 
-	addChan   chan Ts             // 任务增加管道
+	addChan   chan Ts             // 增加任务管道
 	taskChans map[int64](chan Ts) // map的Value(管道)存放任务, Key(int64)是任务管道的id
 	endTimes  map[int64]time.Time // 记录对应任务管道的最后任务的执行时间
 	idsChan   chan int64          // 传递id，表示新建了管道
-	lock      sync.Mutex          // 读写锁
-	tmpId     int64
+	lock      sync.Mutex          // 互斥锁, 确保
+	chanId    int64               // 管道id
 }
 
 // Ts 表示一个任务
@@ -38,9 +40,9 @@ func (t *TQ) run() {
 	t.taskChans = make(map[int64](chan Ts))
 	t.endTimes = make(map[int64]time.Time)
 
-	// 执行
+	// exec新的taskChans
 	go func() {
-		for {
+		for !t.Close {
 			id := <-t.idsChan
 			go t.exec(t.taskChans[id], id) // 执行每个管道中的任务
 		}
@@ -49,12 +51,12 @@ func (t *TQ) run() {
 	// 分发任务
 	go func() {
 		var r Ts
-		for {
+		var flag bool
+		for !t.Close {
 			r = <-t.addChan
 
-			var flag bool = false
+			flag = false
 			for id, v := range t.endTimes {
-
 				if r.T.After(v) && len(t.taskChans[id]) <= 1048576 { //追加
 					t.taskChans[id] <- r
 					t.endTimes[id] = r.T
@@ -62,21 +64,26 @@ func (t *TQ) run() {
 					break
 				}
 			}
+
 			// 需要新建管道
 			if !flag {
 				var sc chan Ts = make(chan Ts, 64*2)
 
-				t.tmpId++
+				t.chanId++
 				if len(t.endTimes) == 0 {
-					t.tmpId = 0
+					t.chanId = 0
 				}
-				t.taskChans[t.tmpId] = sc // add
+				t.lock.Lock()
+				t.taskChans[t.chanId] = sc // add
+				t.lock.Unlock()
 
-				t.endTimes[t.tmpId] = r.T
-				t.taskChans[t.tmpId] <- r
-				t.idsChan <- t.tmpId
+				t.endTimes[t.chanId] = r.T
+				t.taskChans[t.chanId] <- r
+				t.idsChan <- t.chanId
 			}
 		}
+
+		close(t.addChan)
 	}()
 }
 
@@ -89,10 +96,15 @@ func (t *TQ) Add(r Ts) error {
 	return nil
 }
 
+// Drop 结束任务队列
+func (t *TQ) Drop() {
+	t.Close = true
+}
+
 // exec 执行任务
 func (t *TQ) exec(c chan Ts, id int64) {
 	var ts Ts
-	for {
+	for !t.Close {
 		if id != 0 && len(c) == 0 {
 			// 释放
 			t.lock.Lock()
@@ -105,7 +117,8 @@ func (t *TQ) exec(c chan Ts, id int64) {
 
 		ts = <-c
 		time.Sleep(time.Until(ts.T)) //延时
-
-		t.MQ <- ts.P
+		if !t.Close {
+			t.MQ <- ts.P
+		}
 	}
 }
