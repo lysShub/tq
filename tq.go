@@ -74,7 +74,7 @@ func (t *TQ) run() {
 				// 维护works，释放过多空闲的works
 				if len(t.works) > 16 {
 					t.lock.Lock()
-					for i := 1; i < len(t.works); i++ {
+					for i := 3; i < len(t.works); i++ {
 						if len(t.works[i].c) == 0 && !atomic.CompareAndSwapInt32(t.works[i].ing, 0, 0) {
 							close(t.works[i].c)
 							t.works = append(t.works[:i], t.works[i+1:]...)
