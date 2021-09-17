@@ -14,8 +14,8 @@ func main() {
 	var st = time.Now()
 	go func() {
 		var r interface{}
-		for !Q.Close { // 每次循环不能阻塞太长，避免通知管道MQ阻塞
-			r = <-(Q.MQ)
+		for r = range Q.MQ {
+			// 每次循环执行时间不能太长，避免没有及时读取MQ中数据导致阻塞
 			if v, ok := r.(string); ok {
 				go fmt.Println(v, " 实际延时:", time.Since(st))
 			}
