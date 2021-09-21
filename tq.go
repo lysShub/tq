@@ -1,9 +1,6 @@
 package tq
 
 import (
-	"fmt"
-	"io"
-	"os"
 	"sync"
 	"time"
 )
@@ -12,12 +9,12 @@ type TQ struct {
 
 	// 达到任务执行时间时返回对应的Ts.P; 请使用for-range及时读取, 否则会阻塞以致影响后续任务
 	MQ chan interface{}
+	// MQ阻塞告警，当len(MQ)*3 > cap(MQ)时为True
+	Block bool
 
 	addChan chan Ts    // 增加任务管道
 	works   []*work    // 记录任务
 	lock    sync.Mutex //
-	capChan int        // chan容量
-	writer  io.Writer  //
 }
 
 // work 表示一个工作
@@ -34,22 +31,16 @@ type Ts struct {
 
 // NewTQ
 // 	@ioOut: 被丢弃任务输出日志；对于MQ中未被及时读取的的数据，唯一的操作是将其丢弃，但避免静默处理，因此需要打日志
-func NewTQ(ioOut ...io.Writer) *TQ {
+func NewTQ() *TQ {
 	var t = new(TQ)
-	if len(ioOut) != 0 {
-		t.writer = io.MultiWriter(ioOut...)
-	} else {
-		t.writer = os.Stdout
-	}
 	t.run()
 	return t
 }
 
 // Run 启动
 func (t *TQ) run() {
-	t.capChan = 128
-	t.MQ = make(chan interface{}, t.capChan)
-	t.addChan = make(chan Ts, t.capChan)
+	t.MQ = make(chan interface{}, 128)
+	t.addChan = make(chan Ts, 128)
 	t.works = make([]*work, 0, 64)
 
 	// 分发任务
@@ -100,9 +91,11 @@ func (t *TQ) run() {
 }
 
 // Add 增加任务
-// 	存在阻塞的可能！！
+// 	当MQ被阻塞时，Add会被主动阻塞
 func (t *TQ) Add(r Ts) error {
+	t.lock.Lock()
 	t.addChan <- r
+	t.lock.Unlock()
 	return nil
 }
 
@@ -120,18 +113,18 @@ func (t *TQ) exec(w *work) {
 		recover() // 从w.c读取到任务，在执行通知之前先执行了Drop；会导致panic
 	}()
 	var ts Ts
+	var tmp int
 
 	for ts = range w.c {
-
 		time.Sleep(time.Until(ts.T)) //延时
 
-		t.lock.Lock()
-		if len(t.MQ) < t.capChan {
-			t.MQ <- ts.P
-		} else {
-			t.writer.Write([]byte(fmt.Sprintln(<-t.MQ)))
-			t.MQ <- ts.P
+		if tmp = len(t.MQ) >> 3; tmp > 5 {
+			t.Block = true
+		} else if tmp < 5 {
+			t.Block = false
 		}
+		t.lock.Lock()
+		t.MQ <- ts.P // MQ阻塞时Add写入也会阻塞
 		t.lock.Unlock()
 	}
 }
