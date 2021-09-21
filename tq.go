@@ -1,8 +1,10 @@
 package tq
 
 import (
+	"fmt"
+	"io"
+	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -14,13 +16,14 @@ type TQ struct {
 	addChan chan Ts    // 增加任务管道
 	works   []*work    // 记录任务
 	lock    sync.Mutex //
+	capChan int        // chan容量
+	writer  io.Writer  //
 }
 
 // work 表示一个工作
 type work struct {
 	c       chan Ts   // 任务队列
 	endTime time.Time // 队列中最后任务执行时间
-	ing     *int32    // 是否正在工作， 0==>true
 }
 
 // Ts 表示一个任务
@@ -29,16 +32,24 @@ type Ts struct {
 	P interface{} // 执行时MQ返回的数据
 }
 
-func NewTQ() *TQ {
+// NewTQ
+// 	@ioOut: 被丢弃任务输出日志；对于MQ中未被及时读取的的数据，唯一的操作是将其丢弃，但避免静默处理，因此需要打日志
+func NewTQ(ioOut ...io.Writer) *TQ {
 	var t = new(TQ)
+	if len(ioOut) != 0 {
+		t.writer = io.MultiWriter(ioOut...)
+	} else {
+		t.writer = os.Stdout
+	}
 	t.run()
 	return t
 }
 
 // Run 启动
 func (t *TQ) run() {
-	t.MQ = make(chan interface{}, 128)
-	t.addChan = make(chan Ts, 512)
+	t.capChan = 128
+	t.MQ = make(chan interface{}, t.capChan)
+	t.addChan = make(chan Ts, t.capChan)
 	t.works = make([]*work, 0, 64)
 
 	// 分发任务
@@ -60,9 +71,8 @@ func (t *TQ) run() {
 
 			// 需要新建工作
 			if !flag {
-				var tmp int32 = 1
 				var w = new(work)
-				w.c, w.endTime, w.ing = make(chan Ts, 1024), r.T, &tmp
+				w.c, w.endTime = make(chan Ts, 1024), r.T
 
 				t.lock.Lock()
 				t.works = append(t.works, w)
@@ -75,7 +85,7 @@ func (t *TQ) run() {
 				if len(t.works) > 16 {
 					t.lock.Lock()
 					for i := 3; i < len(t.works); i++ {
-						if len(t.works[i].c) == 0 && !atomic.CompareAndSwapInt32(t.works[i].ing, 0, 0) {
+						if len(t.works[i].c) == 0 {
 							close(t.works[i].c)
 							t.works = append(t.works[:i], t.works[i+1:]...)
 						}
@@ -112,11 +122,16 @@ func (t *TQ) exec(w *work) {
 	var ts Ts
 
 	for ts = range w.c {
-		atomic.StoreInt32(w.ing, 0)
 
 		time.Sleep(time.Until(ts.T)) //延时
-		t.MQ <- ts.P
 
-		atomic.StoreInt32(w.ing, 1)
+		t.lock.Lock()
+		if len(t.MQ) < t.capChan {
+			t.MQ <- ts.P
+		} else {
+			t.writer.Write([]byte(fmt.Sprintln(<-t.MQ)))
+			t.MQ <- ts.P
+		}
+		t.lock.Unlock()
 	}
 }

@@ -9,15 +9,21 @@ import (
 )
 
 func main() {
+
 	Q := tq.NewTQ() // 运行
 
 	var st = time.Now()
 	go func() {
 		var r interface{}
+		var i int
 		for r = range Q.MQ {
 			// 每次循环执行时间不能太长，避免没有及时读取MQ中数据导致阻塞
 			if v, ok := r.(string); ok {
-				go fmt.Println(v, " 实际延时:", time.Since(st))
+				fmt.Println(v, " 实际延时:", time.Since(st))
+				i++
+				if i > 5 {
+					return
+				}
 			}
 		}
 	}()
@@ -33,9 +39,6 @@ func main() {
 		P: "设定延时:10s",
 	})
 
-	time.Sleep(time.Second * 20)
-
+	time.Sleep(time.Second * 21)
 	Q.Drop()
-	// Q.Close = true
-
 }
